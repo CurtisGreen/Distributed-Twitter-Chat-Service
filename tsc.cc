@@ -137,14 +137,16 @@ int Client::connectTo()
 
     IReply ire = Route();
     if(!ire.grpc_status.ok()) {
+		std::cout << "Failed routing" << std::endl;
         return -1;
     }
-
+	std::cout << "success routing" << std::endl;
     ire = Login();
     if(!ire.grpc_status.ok()) {
+		std::cout << "Failed logging in" << std::endl;
         return -1;
     }
-
+	std::cout << "success logging in" << std::endl;
     /*std::thread heart([&](){
         Reply pingReply;
         ServerRequest request;
@@ -211,7 +213,7 @@ IReply Client::processCommand(std::string& input)
         }
     }
 
-    if (ire.comm_status == FAILURE_UNKNOWN){
+    if (!ire.grpc_status.ok()){
         std::cout << "Reconnecting to server" << std::endl;
         port = routerPort;
         hostname = routerHostname;
@@ -226,6 +228,9 @@ IReply Client::processCommand(std::string& input)
         }
 
     }
+	else if (ire.comm_status == SUCCESS){
+		return ire;
+	}
     else{
         ire.comm_status = FAILURE_INVALID;
     }
@@ -395,7 +400,7 @@ IReply Client::Route() {
         ire.comm_status = SUCCESS;
         std::string login_info = ip;
         //std::string login_info = hostname + ":" + port;
-			std::cout << "new port stuff " << login_info << std::endl;
+		std::cout << "new port stuff " << login_info << std::endl;
         stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
                grpc::CreateChannel(
                     login_info, grpc::InsecureChannelCredentials())));
@@ -409,9 +414,12 @@ Timeline
 Hnadles the Timeline request
 ---------------------------------------------*/
 void Client::Timeline(const std::string& username) {
+	
     while (true){
+		std::cout<<"Top of loop" << std::endl;
         //Check if initial or reconnection
-        if (reconnected){   
+        if (reconnected){
+			std::cout << "Reconnecting condition" << std::endl;   
             port = routerPort;
             hostname = routerHostname;
             usleep(500000);
@@ -432,7 +440,7 @@ void Client::Timeline(const std::string& username) {
         /*auto myStream = std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream(
                 stub_->Timeline(&context));*/
     	std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream = stub_->Timeline(&context);
-    	std::cout<<"Made function timeline" << std::endl;
+    	
         //Thread used to read chat messages and send them to the server
         std::thread writer([username, stream]() {
                 Posting p;
@@ -446,7 +454,9 @@ void Client::Timeline(const std::string& username) {
                     std::getline(std::cin, msg);
                     p.set_content(msg);
                     p.set_username(user);
-                    stream->Write(p);
+                    if (stream->Write(p) == false){
+						break;
+					}
                 }
                 stream->WritesDone();
                 });
@@ -458,9 +468,11 @@ void Client::Timeline(const std::string& username) {
                     std::cout << p.content() << std::endl;
                 }
                 });
-
+		std::cout << "Exited threads" << std::endl;
         //Wait for the threads to finish
         reader.join();
+		writer.join();
+		std::cout << "Joined read & write" << std::endl;
 
     }
 }

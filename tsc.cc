@@ -68,6 +68,7 @@ class Client : public IClient
         std::string port;
         std::string routerPort;
         std::string routerHostname;
+        bool reconnected = false;
         // You can have an instance of the client stub
         // as a member variable.
         std::unique_ptr<SNSService::Stub> stub_;
@@ -143,8 +144,8 @@ int Client::connectTo()
     if(!ire.grpc_status.ok()) {
         return -1;
     }
-    
-    std::thread heart([&](){
+
+    /*std::thread heart([&](){
         Reply pingReply;
         ServerRequest request;
         //ServerRequest routerRequest;
@@ -159,22 +160,22 @@ int Client::connectTo()
                 usleep(1000000);
             }
             else{
-                std::cout << "Connection to server lost, reconnecting..." << std::endl;
+                //std::cout << "Connection to server lost, reconnecting..." << std::endl;
                 port = routerPort;
                 hostname = routerHostname;
                 usleep(1000000);
                 int i = connectTo();
                 if (i>0){
-					std::cout << "Heart connection Complete" << std::endl;
+					//std::cout << "Connection Complete" << std::endl;
 				}
 				else
-					std::cout << "Heart connection failed" << std::endl;
+					std::cout << "Connection failed" << std::endl;
                 break;
             }
         }
 
     });
-    heart.detach();
+    heart.detach();*/
     return 1;
 }
 
@@ -194,30 +195,40 @@ IReply Client::processCommand(std::string& input)
     if (index != std::string::npos) {
         std::string cmd = input.substr(0, index);
 
-
-        /*
-        if (input.length() == index + 1) {
-            std::cout << "Invalid Input -- No Arguments Given\n";
-        }
-        */
-
         std::string argument = input.substr(index+1, (input.length()-index));
 
         if (cmd == "FOLLOW") {
-            return Follow(argument);
+            ire =  Follow(argument);
         } else if(cmd == "UNFOLLOW") {
-            return UnFollow(argument);
+            ire = UnFollow(argument);
         }
     } else {
         if (input == "LIST") {
-            return List();
+            ire = List();
         } else if (input == "TIMELINE") {
             ire.comm_status = SUCCESS;
             return ire;
         }
     }
 
-    ire.comm_status = FAILURE_INVALID;
+    if (ire.comm_status == FAILURE_UNKNOWN){
+        std::cout << "Reconnecting to server" << std::endl;
+        port = routerPort;
+        hostname = routerHostname;
+        usleep(500000);
+        int i = connectTo();
+        if (i > 0){
+            std::cout << "Connection Complete" << std::endl;
+            ire = processCommand(input);
+        }
+        else{
+            std::cout << "Connection failed" << std::endl;
+        }
+
+    }
+    else{
+        ire.comm_status = FAILURE_INVALID;
+    }
     return ire;
 }
 
@@ -264,6 +275,9 @@ IReply Client::List() {
         for(std::string s : list_reply.followers()){
             ire.followers.push_back(s);
         }
+    }
+    else{
+        ire.comm_status = FAILURE_UNKNOWN;
     }
     return ire;
 }
@@ -396,12 +410,29 @@ Hnadles the Timeline request
 ---------------------------------------------*/
 void Client::Timeline(const std::string& username) {
     while (true){
-		std::cout<<"top of while" << std::endl;
+        //Check if initial or reconnection
+        if (reconnected){   
+            port = routerPort;
+            hostname = routerHostname;
+            usleep(500000);
+            int i = connectTo();
+            if (i>0){
+                std::cout << "Connection Complete" << std::endl;
+            }
+            else{
+                std::cout << "Connection failed" << std::endl;
+            }
+        }
+        else{
+            reconnected = true;
+        }
+        
+
         ClientContext context;
         /*auto myStream = std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream(
                 stub_->Timeline(&context));*/
     	std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream = stub_->Timeline(&context);
-    	
+    	std::cout<<"Made function timeline" << std::endl;
         //Thread used to read chat messages and send them to the server
         std::thread writer([username, stream]() {
                 Posting p;
@@ -418,7 +449,6 @@ void Client::Timeline(const std::string& username) {
                     stream->Write(p);
                 }
                 stream->WritesDone();
-				std::cout << "finished writing" << std::endl;
                 });
 
         std::thread reader([&]() {
@@ -431,19 +461,7 @@ void Client::Timeline(const std::string& username) {
 
         //Wait for the threads to finish
         reader.join();
-		writer.detach();
 
-        port = routerPort;
-        hostname = routerHostname;
-        usleep(3000000);
-		std::cout<<"after wait" << std::endl;
-        int i = connectTo();
-		std::cout<<"connecting" << std::endl;
-        if (i>0){
-            std::cout << "Connection Complete" << std::endl;
-        }
-        else
-            std::cout << "Connection failed" << std::endl;
     }
 }
 

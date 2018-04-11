@@ -159,16 +159,16 @@ int Client::connectTo()
                 usleep(1000000);
             }
             else{
-                //std::cout << "Connection to server lost, reconnecting..." << std::endl;
+                std::cout << "Connection to server lost, reconnecting..." << std::endl;
                 port = routerPort;
                 hostname = routerHostname;
                 usleep(1000000);
                 int i = connectTo();
-                /*if (i>0){
-					//std::cout << "Connection Complete" << std::endl;
+                if (i>0){
+					std::cout << "Heart connection Complete" << std::endl;
 				}
 				else
-					std::cout << "Connection failed" << std::endl;*/
+					std::cout << "Heart connection failed" << std::endl;
                 break;
             }
         }
@@ -396,12 +396,12 @@ Hnadles the Timeline request
 ---------------------------------------------*/
 void Client::Timeline(const std::string& username) {
     while (true){
-
+		std::cout<<"top of while" << std::endl;
         ClientContext context;
         /*auto myStream = std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream(
                 stub_->Timeline(&context));*/
     	std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream = stub_->Timeline(&context);
-    	//std::cout<<"Made function tieline" << std::endl;
+    	
         //Thread used to read chat messages and send them to the server
         std::thread writer([username, stream]() {
                 Posting p;
@@ -418,6 +418,7 @@ void Client::Timeline(const std::string& username) {
                     stream->Write(p);
                 }
                 stream->WritesDone();
+				std::cout << "finished writing" << std::endl;
                 });
 
         std::thread reader([&]() {
@@ -430,11 +431,14 @@ void Client::Timeline(const std::string& username) {
 
         //Wait for the threads to finish
         reader.join();
+		writer.detach();
 
         port = routerPort;
         hostname = routerHostname;
-        usleep(1000000);
+        usleep(3000000);
+		std::cout<<"after wait" << std::endl;
         int i = connectTo();
+		std::cout<<"connecting" << std::endl;
         if (i>0){
             std::cout << "Connection Complete" << std::endl;
         }

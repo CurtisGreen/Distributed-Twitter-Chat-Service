@@ -80,8 +80,6 @@ class Client : public IClient
         void Timeline(const std::string& username);
 
 };
-bool connected;
-bool secondHeart = false;
 /*///////////////////////////////////////////////////////////////////////////////////
 Main
 *////////////////////////////////////////////////////////////////////////////////////
@@ -145,7 +143,7 @@ int Client::connectTo()
     if(!ire.grpc_status.ok()) {
         return -1;
     }
-	connected = true;
+    
     std::thread heart([&](){
         Reply pingReply;
         ServerRequest request;
@@ -156,7 +154,6 @@ int Client::connectTo()
             ClientContext context;
             Status status;
             status = stub_->slavePing(&context, request, &pingReply);
-			//if (secondHeart){std::cout<<"Second heart"<<std::endl;break;}
 			
             if(status.ok()){
                 usleep(1000000);
@@ -398,87 +395,51 @@ Timeline
 Hnadles the Timeline request
 ---------------------------------------------*/
 void Client::Timeline(const std::string& username) {
-    ClientContext context;
-	//secondHeart = true;
-	//connected = true;
-    /*auto myStream = std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream(
-            stub_->Timeline(&context));*/
-	std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream = stub_->Timeline(&context);
-	//std::cout<<"Made function tieline" << std::endl;
-    //Thread used to read chat messages and send them to the server
-    std::thread writer([username, stream]() {
-            Posting p;
-            p.set_content("connect");
-            p.set_username(username);
-			//std::cout << "about to write" << std::endl;
-            stream->Write(p);
-            std::string msg;
-            std::string user = username;
-            while(1) {
-				if (!connected){
-					//std::cout << "broken connection" << std::endl;
-					stream->WritesDone();
-					break;
-				}
-                std::getline(std::cin, msg);
-                p.set_content(msg);
-                p.set_username(user);
+    while (true){
+
+        ClientContext context;
+        /*auto myStream = std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream(
+                stub_->Timeline(&context));*/
+    	std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream = stub_->Timeline(&context);
+    	//std::cout<<"Made function tieline" << std::endl;
+        //Thread used to read chat messages and send them to the server
+        std::thread writer([username, stream]() {
+                Posting p;
+                p.set_content("connect");
+                p.set_username(username);
+    			//std::cout << "about to write" << std::endl;
                 stream->Write(p);
-            }
-            stream->WritesDone();
-            });
+                std::string msg;
+                std::string user = username;
+                while(1) {
+                    std::getline(std::cin, msg);
+                    p.set_content(msg);
+                    p.set_username(user);
+                    stream->Write(p);
+                }
+                stream->WritesDone();
+                });
 
-    std::thread reader([&]() {
-            Posting p;
-			//std::cout << "about to read" << std::endl;
-            while(stream->Read(&p)){
-				if (!connected)
-					break;
-                std::cout << std::endl;
-                std::cout << p.content() << std::endl;
-            }
-            });
+        std::thread reader([&]() {
+                Posting p;
+                while(stream->Read(&p)){
+                    std::cout << std::endl;
+                    std::cout << p.content() << std::endl;
+                }
+                });
 
-	/*std::thread heart([&](){
-        Reply pingReply;
-        ServerRequest request;
-        //ServerRequest routerRequest;
-        
-        request.set_port(port);
-        while(1){
-            ClientContext context;
-            Status status;
-			//std::cout << "about to hearbeat" << std::endl;
-            status = stub_->slavePing(&context, request, &pingReply);
+        //Wait for the threads to finish
+        reader.join();
 
-		
-            if(status.ok()){
-                usleep(1000000);
-            }
-            else{
-                std::cout << "Connection to server lost, reconnecting..." << std::endl;
-				connected = false;
-                usleep(2100000);
-				std::string login_info = hostname + ":" + routerPort;
-				stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
-						   grpc::CreateChannel(
-						        login_info, grpc::InsecureChannelCredentials())));
-				IReply ire = Route();
-				if(!ire.grpc_status.ok()) {
-					std::cout << "new Connection failed" << std::endl;
-					break;
-				}
-				connected = true;
-				std::cout << "new Connection Complete" << std::endl;
-                break;
-            }
+        port = routerPort;
+        hostname = routerHostname;
+        usleep(1000000);
+        int i = connectTo();
+        if (i>0){
+            std::cout << "Connection Complete" << std::endl;
         }
-
-    });*/
-    //Wait for the threads to finish
-    writer.join();
-    reader.join();
-	if (!connected)
-		Timeline(username);
+        else
+            std::cout << "Connection failed" << std::endl;
+    }
 }
 

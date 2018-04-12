@@ -2,7 +2,7 @@
 Caleb Edens - 822007959
 Curtis Green - 422008537
 
-Assignment #3.1
+Assignment #3.2
 */
 
 /*///////////////////////////////////////////////////////////////////////////////////
@@ -46,6 +46,8 @@ Message MakeMessage(const std::string& username, const std::string& msg) {
     return m;
 }
 
+bool stress_test;
+int max_posts;
 
 /*///////////////////////////////////////////////////////////////////////////////////
 Client Class
@@ -69,6 +71,7 @@ class Client : public IClient
         std::string routerPort;
         std::string routerHostname;
         bool reconnected = false;
+        
         // You can have an instance of the client stub
         // as a member variable.
         std::unique_ptr<SNSService::Stub> stub_;
@@ -90,7 +93,7 @@ int main(int argc, char** argv) {
     std::string username = "default";
     std::string port = "3010";
     int opt = 0;
-    while ((opt = getopt(argc, argv, "h:u:p:")) != -1){
+    while ((opt = getopt(argc, argv, "h:u:p:t:")) != -1){
         switch(opt) {
             case 'h':
                 hostname = optarg;break;
@@ -98,6 +101,9 @@ int main(int argc, char** argv) {
                 username = optarg;break;
             case 'p':
                 port = optarg;break;
+            case 't':
+                stress_test = true;
+                max_posts = atoi(optarg);break;
             default:
                 std::cerr << "Invalid Command Line Argument\n";
         }
@@ -434,20 +440,39 @@ void Client::Timeline(const std::string& username) {
         else{
             reconnected = true;
         }
-        
 
         ClientContext context;
         /*auto myStream = std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream(
                 stub_->Timeline(&context));*/
     	std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream = stub_->Timeline(&context);
-    	
+        
         //Thread used to read chat messages and send them to the server
         std::thread writer([username, stream]() {
                 Posting p;
                 p.set_content("connect");
                 p.set_username(username);
-    			//std::cout << "about to write" << std::endl;
                 stream->Write(p);
+
+                // Stress test
+		        if (stress_test) {
+		            // start
+		            using namespace std;
+		            clock_t begin = clock();
+
+		            for (int i = 0; i < max_posts; i++) {
+		                this_thread::sleep_for(chrono::milliseconds(2));
+		                cout << "send message: " << i << endl;
+		                p.set_content(to_string(i));
+                    	p.set_username(username);
+		                stream->Write(p);
+		            }
+		            clock_t end = clock();
+		            cout << "Execution time: " << double(end-begin) / CLOCKS_PER_SEC << " seconds" << endl;
+		            stress_test = false;
+		            // end
+		        }
+
+                
                 std::string msg;
                 std::string user = username;
                 while(1) {

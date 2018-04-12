@@ -2,7 +2,7 @@
 Caleb Edens - 822007959
 Curtis Green - 422008537
 
-Assignment #3.1
+Assignment #3.2
 */
 
 /*///////////////////////////////////////////////////////////////////////////////////
@@ -79,6 +79,7 @@ struct Serv {
 	std::string port;
 	std::string host;
 	bool alive = false;
+	std::set<std::string> clients;
 	ServerReaderWriter<Posting, Posting>* stream = 0;
 	bool operator==(const Serv& s1) const{
 		return (host == s1.host && port == s1.port);
@@ -109,7 +110,6 @@ SNService Class
 class SNSServiceImpl final : public SNSService::Service {
  public: 
  std::string type = "error";
- std::string leaderIp = "error";
  std::string myServerAddress = "error";
  std::string routerPort = "error";
  std::string routerHost = "error";
@@ -218,6 +218,7 @@ class SNSServiceImpl final : public SNSService::Service {
 			writeFile();				
 		}
 		else{ 
+			killClient(username);
 			Client *user = &client_db[user_index];
 			if(user->connected)
 				reply->set_msg("Invalid Username");
@@ -233,18 +234,19 @@ class SNSServiceImpl final : public SNSService::Service {
 	/*-----------------------------------------------------------------------------------
     Route
     
-    This directs the clients to the current leading server. 
+    This directs the clients to the server with least number of clients. 
     ---------------------------------------------*/
 	Status Route(ServerContext* context, const Request* request, Reply* reply) override {
-		Client c;
 		std::string username = request->username();
 		usleep(100000);
-		std::cout << "routing " << username << " to " << leaderIp << std::endl;
-		int user_index = find_user(username);
+		std::string leaderIp = loadBal();
 		if(leaderIp == "error"){
 			reply->set_msg("noLeader");
 		}
 		else{ 
+			std::cout << "routing " << username << " to " << leaderIp << std::endl;
+			auto leaderServ = server_db.find(leaderIp);
+			leaderServ->second.clients.insert(username);
 			reply->set_msg(leaderIp);
 		}
 		return Status::OK;
@@ -269,11 +271,6 @@ class SNSServiceImpl final : public SNSService::Service {
 			s.alive = true;
 			server_db.insert(std::pair<std::string, Serv>(ip, s));
 			std::cout << "Router: Server " << ip << " successfully added" << std::endl;
-
-			if (leaderIp == "error"){
-				leaderIp = ip;
-				std::cout << "Router: New leader elected " << ip << std::endl;
-			}
 		}
 		else{ 
 			if(port_iter->second.alive)
@@ -281,34 +278,48 @@ class SNSServiceImpl final : public SNSService::Service {
 			else{
 				std::cout << "Router: Welcome Back " << ip << std::endl;
 				port_iter->second.alive = true;
-				if (leaderIp == "error"){
-					leaderIp = ip;
-					std::cout << "Router: New leader elected " << ip << std::endl;
-				}
 			}
 		}
 		return Status::OK;
 	}
 
 	/*-----------------------------------------------------------------------------------
-    bully
+    killClient
+    
+    Removes clients from server's list, 
+    for load balancing purposes
+    ---------------------------------------------*/
+	void killClient(std::string username){
+		for (auto iter = server_db.rbegin(); iter != server_db.rend(); iter++){
+			auto it = iter->second.clients.find(username);
+			if (it != iter->second.clients.end()){
+				iter->second.clients.erase(it);
+			}
+		}
+	}
+
+	/*-----------------------------------------------------------------------------------
+    loadBal
     
     This function polls the currently active servers in search of the 
-    higherst port to crown the current leading server. 
+    lowest client count to pick who will take the new client. 
     ---------------------------------------------*/
-	void bully(){
+	std::string loadBal(){
 		bool noneAlive = true;
+		std::string leaderIp;
+		int lowestCount = 9999999;
 		for (auto iter = server_db.rbegin(); iter != server_db.rend(); iter++){
-			if (iter->second.alive){
+			if (iter->second.alive && iter->second.clients.size() <= lowestCount){
 				leaderIp = iter->first;
+				lowestCount = iter->second.clients.size();
 				noneAlive = false;
-				std::cout << "Router: New leader elected " << leaderIp << std::endl;
 			}
 		}
 		if (noneAlive){
-			std::cout << "Router: Failed to elect new leader" << std::endl;
+			std::cout << "Router: Failed to find avaiable master" << std::endl;
 			leaderIp = "error";
 		}
+		return leaderIp;
 	}
 
 	/*-----------------------------------------------------------------------------------
@@ -329,10 +340,8 @@ class SNSServiceImpl final : public SNSService::Service {
 		
 			std::cout << "Router: Server " << ip << " died" << std::endl;		
 
-			// If leader, elect new one
-			if (ip == leaderIp){
-				bully();
-			}
+			// Remove connected clients for dead server
+			server_db.find(ip)->second.clients.clear();
 		}
 		// Format: "f/u/n serverHost&Port user affectedUser"
 		else if (port[0] == 'u'|| port[0] == 'f' || port[0] == 'n'){
@@ -490,6 +499,8 @@ class SNSServiceImpl final : public SNSService::Service {
         
         reader.join();
         c->connected = false;
+        killClient(user);
+
         return Status::OK;
 	}
 

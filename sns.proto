@@ -43,6 +43,7 @@ service SNSService{
   rpc UnFollow (Request) returns (Reply) {}
   rpc newServer (ServerRequest) returns (Reply) {}
   rpc slavePing (ServerRequest) returns (Reply) {}
+  rpc updateServer (ServerConnection) returns (Reply) {}
   // Bidirectional streaming RPC
   rpc Timeline (stream Posting) returns (stream Posting) {}
 }
@@ -61,10 +62,16 @@ message ServerRequest {
   string port = 1;
 }
 
+message ServerConnection{
+  string source = 1;
+  string destination = 2;
+}
+
 message Posting {
     string content = 1;
     string username = 2;
     string time = 3;
+    string ip = 4;
 }
 
 message Reply {

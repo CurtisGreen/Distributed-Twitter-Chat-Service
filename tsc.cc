@@ -146,13 +146,13 @@ int Client::connectTo()
 		std::cout << "Failed routing" << std::endl;
         return -1;
     }
-	std::cout << "success routing" << std::endl;
+	//std::cout << "success routing" << std::endl;
     ire = Login();
     if(!ire.grpc_status.ok()) {
 		std::cout << "Failed logging in" << std::endl;
         return -1;
     }
-	std::cout << "success logging in" << std::endl;
+	//std::cout << "success logging in" << std::endl;
     /*std::thread heart([&](){
         Reply pingReply;
         ServerRequest request;
@@ -406,7 +406,7 @@ IReply Client::Route() {
         ire.comm_status = SUCCESS;
         std::string login_info = ip;
         //std::string login_info = hostname + ":" + port;
-		std::cout << "new port stuff " << login_info << std::endl;
+		//std::cout << "new port stuff " << login_info << std::endl;
         stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
                grpc::CreateChannel(
                     login_info, grpc::InsecureChannelCredentials())));
@@ -422,10 +422,10 @@ Hnadles the Timeline request
 void Client::Timeline(const std::string& username) {
 	
     while (true){
-		std::cout<<"Top of loop" << std::endl;
+		//std::cout<<"Top of loop" << std::endl;
         //Check if initial or reconnection
         if (reconnected){
-			std::cout << "Reconnecting condition" << std::endl;   
+			//std::cout << "Reconnecting condition" << std::endl;   
             port = routerPort;
             hostname = routerHostname;
             usleep(500000);
@@ -445,7 +445,7 @@ void Client::Timeline(const std::string& username) {
         /*auto myStream = std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream(
                 stub_->Timeline(&context));*/
     	std::shared_ptr<ClientReaderWriter<Posting, Posting>> stream = stub_->Timeline(&context);
-        
+    	
         //Thread used to read chat messages and send them to the server
         std::thread writer([username, stream]() {
                 Posting p;
@@ -493,11 +493,11 @@ void Client::Timeline(const std::string& username) {
                     std::cout << p.content() << std::endl;
                 }
                 });
-		std::cout << "Exited threads" << std::endl;
+		//std::cout << "Exited threads" << std::endl;
         //Wait for the threads to finish
         reader.join();
 		writer.join();
-		std::cout << "Joined read & write" << std::endl;
+		//std::cout << "Joined read & write" << std::endl;
 
     }
 }

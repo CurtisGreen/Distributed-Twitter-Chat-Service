@@ -39,6 +39,7 @@ using grpc::ServerReaderWriter;
 using grpc::ServerWriter;
 using grpc::Status;
 using grpc::ClientContext;
+using grpc::ClientReaderWriter;
 using csce438::Message;
 using csce438::Posting;
 using csce438::ListReply;
@@ -46,6 +47,7 @@ using csce438::Request;
 using csce438::ServerRequest;
 using csce438::Reply;
 using csce438::SNSService;
+using csce438::ServerConnection;
 
 /*///////////////////////////////////////////////////////////////////////////////////
 Structures
@@ -78,6 +80,8 @@ struct Client {
 struct Serv {
 	std::string port;
 	std::string host;
+	std::string sourceIP; //server it recieves messages from
+	std::string destinationIP; //server it sends messages to
 	bool alive = false;
 	std::set<std::string> clients;
 	ServerReaderWriter<Posting, Posting>* stream = 0;
@@ -109,10 +113,35 @@ SNService Class
 *////////////////////////////////////////////////////////////////////////////////////
 class SNSServiceImpl final : public SNSService::Service {
  public: 
- std::string type = "error";
- std::string myServerAddress = "error";
- std::string routerPort = "error";
- std::string routerHost = "error";
+	std::string type = "error";
+	std::string myServerAddress = "error";
+	std::string routerPort = "error";
+	std::string routerHost = "error";
+	std::string headIP = "error";
+	std::string tailIP = "error";
+
+	bool hasBroadcastStream = false;
+	std::unique_ptr<SNSService::Stub> stub_;
+	std::unique_ptr<ClientReaderWriter<Posting, Posting>> broadcastStream = 0;
+
+ /*-----------------------------------------------------------------------------------
+	updateMyServer
+
+	Asks router for connection update
+	---------------------------------------------*/
+	void updateMyServer(){
+		auto routerStub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
+					 grpc::CreateChannel(
+								(routerHost+":"+routerPort), grpc::InsecureChannelCredentials())));
+		//std::cout << "created stub to connect to router: " << host+routerPort << std::endl;
+		ServerRequest request;
+		ClientContext context;
+		Reply pingReply;
+		Status status;
+		request.set_port("s");
+		status = routerStub_->slavePing(&context, request, &pingReply);
+		
+	}
 
 
  private:
@@ -232,6 +261,113 @@ class SNSServiceImpl final : public SNSService::Service {
 	}
 
 	/*-----------------------------------------------------------------------------------
+    addServerLink
+    
+    Handles the addition of a new server and sets the connections between servers
+    ---------------------------------------------*/
+	void addServerLink(std::string servIP){
+		bool bufferFlag = false; 
+		bool alive = false;
+		for (auto iter = server_db.rbegin(); iter != server_db.rend(); iter++){
+			if(iter->second.alive && !bufferFlag){
+				bufferFlag = true;
+				continue;
+			}
+			else if(iter->second.alive && bufferFlag){
+				alive = true;
+				break;
+			}
+		}
+		auto currServer = server_db.find(servIP);
+		auto tailServer = server_db.find(tailIP);
+		auto headServer = server_db.find(headIP);
+		if(alive == false){
+			headIP = servIP;
+			tailIP = servIP; 
+			currServer->second.sourceIP = servIP; 
+			currServer->second.destinationIP = servIP; 
+		}
+		else{
+			currServer->second.sourceIP = tailIP; 
+			currServer->second.destinationIP = headIP; 
+			tailServer->second.destinationIP = servIP; 
+			headServer->second.sourceIP = servIP;
+			tailIP = servIP;
+		}
+		
+		std::cout << "Add Server: " << std::endl;
+		auto curr = server_db.find(headIP);
+		std::cout << curr->first << " --> ";
+		while(curr->first != tailIP){
+			curr = server_db.find(curr->second.destinationIP);
+			std::cout << curr->first << " --> ";
+		}
+		std::cout << std::endl;
+		//std::cout << "..." << tailServer->second.destinationIP << "| , |"<< currServer->second.sourceIP << "..." << currServer->second.destinationIP << "| , |" << headServer->second.sourceIP << "..." << std::endl;
+		//std::cout << "Head: " << headIP << std::endl;
+		//std::cout << "Tail: " << tailIP << std::endl;
+		SendServerLink();
+	}
+
+	/*-----------------------------------------------------------------------------------
+    removeServerLink
+    
+    Handles the removal of a server (caused by its death) so that message passing 
+    can be redirected. 
+    ---------------------------------------------*/
+	void removeServerLink(std::string servIP){
+		auto currServer = server_db.find(servIP);
+		if(headIP == tailIP){
+			headIP = "error";
+			tailIP = "error";
+			currServer->second.sourceIP = "error";
+			currServer->second.destinationIP = "error";
+			std::cout << "Router: Last server removed!" << std::endl; 
+		}
+		else{
+			auto prevServer = server_db.find(currServer->second.sourceIP);
+			auto nextServer = server_db.find(currServer->second.destinationIP);
+			prevServer->second.destinationIP = nextServer->first; 
+			nextServer->second.sourceIP = prevServer->first; 
+			if(servIP == headIP){
+				headIP = prevServer->first;
+			}
+			if(servIP == tailIP){
+				tailIP = nextServer->first;
+			}
+			std::cout << "Remove Server: " << std::endl;
+			auto curr = server_db.find(headIP);
+			std::cout << curr->first << " --> ";
+			while(curr->first != tailIP){
+				curr = server_db.find(curr->second.destinationIP);
+				std::cout << curr->first << " --> ";
+			}
+			std::cout << std::endl;
+		}
+		SendServerLink();
+
+	}
+
+	void SendServerLink(){
+		for (auto i : server_db){
+			if (i.second.alive){
+				std::string thisIp = i.second.host+":"+i.second.port;
+				auto stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
+			 		grpc::CreateChannel(
+						thisIp, grpc::InsecureChannelCredentials())));
+
+				ServerConnection request;
+				request.set_source(i.second.sourceIP);
+				request.set_destination(i.second.destinationIP);
+				ClientContext context;
+				Reply reply;
+				Status status = stub_->updateServer(&context, request, &reply);
+			}
+		}
+
+	}
+
+	/*-----------------------------------------------------------------------------------
     Route
     
     This directs the clients to the server with least number of clients. 
@@ -270,6 +406,7 @@ class SNSServiceImpl final : public SNSService::Service {
 			s.host = host;
 			s.alive = true;
 			server_db.insert(std::pair<std::string, Serv>(ip, s));
+			addServerLink(ip);
 			std::cout << "Router: Server " << ip << " successfully added" << std::endl;
 		}
 		else{ 
@@ -278,10 +415,29 @@ class SNSServiceImpl final : public SNSService::Service {
 			else{
 				std::cout << "Router: Welcome Back " << ip << std::endl;
 				port_iter->second.alive = true;
+				addServerLink(ip);
 			}
 		}
 		return Status::OK;
 	}
+
+	/*-----------------------------------------------------------------------------------
+    updateServer
+    
+    Servers receive interk-server connection info from router
+    ---------------------------------------------*/
+	Status updateServer(ServerContext* context, const ServerConnection* request, Reply* reply) override {
+		headIP = request->source();
+		tailIP = request->destination();
+		std::cout << "New source: " << headIP << " dest: " << tailIP << std::endl;
+
+		if (headIP == "error" || tailIP == "error"){
+			std::cout << "Failed to establish place in server network" << std::endl;
+		}
+
+		return Status::OK;
+	}
+
 
 	/*-----------------------------------------------------------------------------------
     killClient
@@ -337,11 +493,15 @@ class SNSServiceImpl final : public SNSService::Service {
 			std::string ip = port.substr(1, port.length()-1);
 			auto serv = server_db.find(ip);
 			serv->second.alive = false;
-		
+			removeServerLink(ip);
 			std::cout << "Router: Server " << ip << " died" << std::endl;		
 
 			// Remove connected clients for dead server
 			server_db.find(ip)->second.clients.clear();
+		}
+		// New server
+		else if (port[0] == 's'){
+			SendServerLink();
 		}
 		// Format: "f/u/n serverHost&Port user affectedUser"
 		else if (port[0] == 'u'|| port[0] == 'f' || port[0] == 'n'){
@@ -449,8 +609,11 @@ class SNSServiceImpl final : public SNSService::Service {
     ---------------------------------------------*/
 	Status Timeline(ServerContext* context, 
 		ServerReaderWriter<Posting, Posting>* stream) override {
-		//std::cout << "new stream" << std::endl;
+		std::cout << "new stream" << std::endl;
+		std::flush(std::cout);
 		Client *c;
+
+		std::string label = "default";
 
 		time_t rawtime;
         struct tm * timeinfo;
@@ -461,29 +624,118 @@ class SNSServiceImpl final : public SNSService::Service {
         //Throw away initial connection
         Posting p;
         stream->Read(&p);
+        std::cout << "content: " << p.content() << " from Username: " << p.username() << " with ip: " << p.ip() << std::endl;
         std::string msg = p.content();
         std::string user = p.username();
         int nameIndex = find_user(user);
-        c = &client_db[nameIndex];
-		//std::cout << "msg, user = " << msg << user << std::endl;
-        // Write old posts from followees
         Posting new_posting;
-        for(int i = 0; i < c->posts.size(); i++){
-            std::string time_data = c->posts[i].time;
-            if (c->posts[i].time[c->posts[i].time.length()-1] == '\n'){
-                time_data = c->posts[i].time.substr(0, c->posts[i].time.length()-1);
-            }
-            new_posting.set_content(c->posts[i].username + "(" + time_data + ")>> " + c->posts[i].message + '\n');
-            stream->Write(new_posting);
-        }
-        if(c->stream == 0){
-			c->stream = stream;
-        }
+        std::string incomingIP = p.ip();
+
+        // Setup broadcast to other servers
+    
+		ClientContext broadcastContext;
+        
+		std::cout << "Creating timeline connection with tailIP: " << tailIP << std::endl;
+		if(!hasBroadcastStream){
+			stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
+           		grpc::CreateChannel(
+                	tailIP, grpc::InsecureChannelCredentials())));
+			broadcastStream = stub_->Timeline(&broadcastContext);
+			hasBroadcastStream = true;
+			std::cout << "Didn't have a broadcast stream, now it does" << std::endl;
+		}
+
+		if (incomingIP == ""){
+			label = "client";
+		}
+		else{
+			label = "broadcast";
+			std::cout << "BROAD: " << incomingIP << std::endl;
+		}
+		Posting q;
+		/*q.set_content("broadcast");
+		q.set_username(user);
+		if (incomingIP == ""){
+			q.set_ip(myServerAddress);
+		}*/
+
+		std::cout << label << ": " << "incoming = " << incomingIP << " myserver = " << myServerAddress << std::endl;
+		/*if (incomingIP != myServerAddress){
+			broadcastStream->Write(q);
+			std::cout << "Shouldn't write here" << std::endl;
+		}
+		std::cout << "Sent broadcast" << std::endl;*/
+
+        if (nameIndex >= 0 ){
+        	c = &client_db[nameIndex];
+				        // Write old posts from followees
+	        for(int i = 0; i < c->posts.size(); i++){
+	            std::string time_data = c->posts[i].time;
+	            if (c->posts[i].time[c->posts[i].time.length()-1] == '\n'){
+	                time_data = c->posts[i].time.substr(0, c->posts[i].time.length()-1);
+	            }
+	            new_posting.set_content(c->posts[i].username + "(" + time_data + ")>> " + c->posts[i].message + '\n');
+	            stream->Write(new_posting);
+	        }
+	        if(c->stream == 0){
+				c->stream = stream;
+				std::cout << label << ": " << incomingIP << std::endl;
+	        }
+
+			/*if (incomingIP != tailIP &&  tailIP != ""){
+				std::cout << "Creating client context" << std::endl;
+				ClientContext context;
+				std::cout << "Creating stub" << std::endl;
+		        stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
+		           grpc::CreateChannel(
+		                tailIP, grpc::InsecureChannelCredentials())));
+
+		         std::cout << "Creating timeline connection" << std::endl;
+		    	 broadcastStream = stub_->Timeline(&context);
+		    	 std::cout << "Created broadcastStream" << std::endl;
+		    	 Posting q;
+		    	 q.set_content("connect");
+                 q.set_username(user);
+                 broadcastStream->Write(q);
+                 std::cout << "Sent connect" << std::endl;
+			}*/
+	    }
+        
 
         // Read user input and write it to followers
         std::thread reader([&](){
+
+			std::cout << label << ": " << incomingIP << " :::: " <<  tailIP << std::endl;
+
             while(stream->Read(&p)) {
+            	std::cout << label << ": " << "Top of read while" << std::endl;
+            	std::flush(std::cout);
+            	q=p;
+            	if (incomingIP == ""){
+            		q.set_ip(myServerAddress);
+            	}
+            	if (tailIP == "" || tailIP == "error" || !hasBroadcastStream){
+            		std::cout << label << ": " << "Either empty tailIP or no broadcaststream" << std::endl;
+            	}
+            	else if (incomingIP == tailIP){
+            		std::cout << "Finished sending to all servers" << std::endl;
+            	}
+            	else if (broadcastStream->Write(q) == false){
+            		std::cout << label << ": " << "Broadcast stream failed" << std::endl;
+            		std::cout << label << ": " << "tailIP = " << tailIP << std::endl;
+            		if (incomingIP != tailIP){
+            			ClientContext context;
+				        stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
+				           grpc::CreateChannel(
+				                tailIP, grpc::InsecureChannelCredentials())));
+				         std::cout << label << ": " << "Created stub" << std::endl;
+				    	 broadcastStream = stub_->Timeline(&context);
+				    	 std::cout << "Reconnected to inter-server stream" << std::endl;
+					}
+            	}
+            	std::cout << label << ": " << "Wrote to broadcastStream" << std::endl;
                 readData(p);
+                std::cout << label << ": " << "Finished readData" << std::endl;
                 std::string time_data = outputTime;
                 if (outputTime[outputTime.length()-1] == '\n'){
                     time_data = outputTime.substr(0, outputTime.length()-1);
@@ -491,15 +743,24 @@ class SNSServiceImpl final : public SNSService::Service {
                 new_posting.set_content(p.username() + "(" + time_data + ")>> " + p.content() + '\n');
                 for(int i = 0; i < c->client_followers.size(); i++){
                     if (c->client_followers[i]->stream != 0){
+                    	std::cout << label << ": " << "Writing to: " << c->client_followers[i]->username << std::endl;
                         c->client_followers[i]->stream->Write(new_posting);
                     }
                 }
+                std::cout << label << ": " << "Set new post data" << std::endl;
             }
         });
         
         reader.join();
-        c->connected = false;
-        killClient(user);
+        if (label == "client"){
+        	c->connected = false;
+        	//c->stream = 0;
+        	killClient(user);
+        }
+        else{
+        	hasBroadcastStream = false;
+        }
+        std::cout << label << ": " << "timeline disconnected" << std::endl;
 
         return Status::OK;
 	}
@@ -790,6 +1051,8 @@ void RunServer(std::string port_no, std::string host, std::string type, std::str
 	builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
 	builder.RegisterService(&service);
 	std::unique_ptr<Server> server(builder.BuildAndStart());
+	if (type == "master")
+		service.updateMyServer();
 	std::cout << "Server listening on " << server_address << std::endl;
 
 	server->Wait();

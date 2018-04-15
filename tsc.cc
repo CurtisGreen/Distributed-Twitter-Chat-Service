@@ -449,9 +449,10 @@ void Client::Timeline(const std::string& username) {
         //Thread used to read chat messages and send them to the server
         std::thread writer([username, stream]() {
                 Posting p;
-                p.set_content("connect");
+                p.set_content("--connect--");
                 p.set_username(username);
                 stream->Write(p);
+				stream->Write(p);
 
                 // Stress test
 		        if (stress_test) {

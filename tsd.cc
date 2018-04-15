@@ -428,7 +428,12 @@ class SNSServiceImpl final : public SNSService::Service {
     ---------------------------------------------*/
 	Status updateServer(ServerContext* context, const ServerConnection* request, Reply* reply) override {
 		headIP = request->source();
+		std::string temp = tailIP;
 		tailIP = request->destination();
+		if (temp != tailIP){
+			broadcastStream = 0;
+			hasBroadcastStream = false;
+		}
 		std::cout << "New source: " << headIP << " dest: " << tailIP << std::endl;
 
 		if (headIP == "error" || tailIP == "error"){
@@ -609,7 +614,7 @@ class SNSServiceImpl final : public SNSService::Service {
     ---------------------------------------------*/
 	Status Timeline(ServerContext* context, 
 		ServerReaderWriter<Posting, Posting>* stream) override {
-		std::cout << "new stream" << std::endl;
+		std::cout << "-------new stream-------" << std::endl;
 		std::flush(std::cout);
 		Client *c;
 
@@ -630,21 +635,9 @@ class SNSServiceImpl final : public SNSService::Service {
         int nameIndex = find_user(user);
         Posting new_posting;
         std::string incomingIP = p.ip();
-
-        // Setup broadcast to other servers
     
 		ClientContext broadcastContext;
-        
-		std::cout << "Creating timeline connection with tailIP: " << tailIP << std::endl;
-		if(!hasBroadcastStream){
-			stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
-           		grpc::CreateChannel(
-                	tailIP, grpc::InsecureChannelCredentials())));
-			broadcastStream = stub_->Timeline(&broadcastContext);
-			hasBroadcastStream = true;
-			std::cout << "Didn't have a broadcast stream, now it does" << std::endl;
-		}
-
+        Posting q;
 		if (incomingIP == ""){
 			label = "client";
 		}
@@ -652,7 +645,18 @@ class SNSServiceImpl final : public SNSService::Service {
 			label = "broadcast";
 			std::cout << "BROAD: " << incomingIP << std::endl;
 		}
-		Posting q;
+		std::cout << label << ": " << "Creating timeline connection with tailIP: " << tailIP << std::endl;
+		// Setup new stream between servers
+		if(broadcastStream == 0){
+			stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
+           		grpc::CreateChannel(
+                	tailIP, grpc::InsecureChannelCredentials())));
+			broadcastStream = stub_->Timeline(&broadcastContext);
+			hasBroadcastStream = true;
+			std::cout << label << ": " << "Didn't have a broadcast stream, now it does" << std::endl;
+		}
+		
+		
 		/*q.set_content("broadcast");
 		q.set_username(user);
 		if (incomingIP == ""){
@@ -665,10 +669,12 @@ class SNSServiceImpl final : public SNSService::Service {
 			std::cout << "Shouldn't write here" << std::endl;
 		}
 		std::cout << "Sent broadcast" << std::endl;*/
-
+		
+		// Write old posts from followees
         if (nameIndex >= 0 ){
+			std::cout << label << ": " << "Writing old posts" << std::endl;
         	c = &client_db[nameIndex];
-				        // Write old posts from followees
+		
 	        for(int i = 0; i < c->posts.size(); i++){
 	            std::string time_data = c->posts[i].time;
 	            if (c->posts[i].time[c->posts[i].time.length()-1] == '\n'){
@@ -679,8 +685,12 @@ class SNSServiceImpl final : public SNSService::Service {
 	        }
 	        if(c->stream == 0){
 				c->stream = stream;
-				std::cout << label << ": " << incomingIP << std::endl;
+				std::cout << label << ": Set stream for " << c->username << " " << incomingIP << std::endl;
 	        }
+			else if (label == "broadcast"){
+				c->stream = stream;
+				std::cout << label << ": Updated stream for " << c->username << " " << incomingIP << std::endl;
+			}
 
 			/*if (incomingIP != tailIP &&  tailIP != ""){
 				std::cout << "Creating client context" << std::endl;
@@ -720,7 +730,7 @@ class SNSServiceImpl final : public SNSService::Service {
             	else if (incomingIP == tailIP){
             		std::cout << "Finished sending to all servers" << std::endl;
             	}
-            	else if (broadcastStream->Write(q) == false){
+            	else if (broadcastStream == 0 || broadcastStream->Write(q) == false){
             		std::cout << label << ": " << "Broadcast stream failed" << std::endl;
             		std::cout << label << ": " << "tailIP = " << tailIP << std::endl;
             		if (incomingIP != tailIP){
@@ -733,34 +743,37 @@ class SNSServiceImpl final : public SNSService::Service {
 				    	 std::cout << "Reconnected to inter-server stream" << std::endl;
 					}
             	}
-            	std::cout << label << ": " << "Wrote to broadcastStream" << std::endl;
-                readData(p);
-                std::cout << label << ": " << "Finished readData" << std::endl;
-                std::string time_data = outputTime;
-                if (outputTime[outputTime.length()-1] == '\n'){
-                    time_data = outputTime.substr(0, outputTime.length()-1);
-                }
-                new_posting.set_content(p.username() + "(" + time_data + ")>> " + p.content() + '\n');
-                for(int i = 0; i < c->client_followers.size(); i++){
-                    if (c->client_followers[i]->stream != 0){
-                    	std::cout << label << ": " << "Writing to: " << c->client_followers[i]->username << std::endl;
-                        c->client_followers[i]->stream->Write(new_posting);
-                    }
-                }
-                std::cout << label << ": " << "Set new post data" << std::endl;
+				// Disregard initial connection
+				if (p.content() != "--connect--"){
+		            readData(p);
+				}
+	            std::string time_data = outputTime;
+	            if (outputTime[outputTime.length()-1] == '\n'){
+	                time_data = outputTime.substr(0, outputTime.length()-1);
+	            }
+	            new_posting.set_content(p.username() + "(" + time_data + ")>> " + p.content() + '\n');
+	            for(int i = 0; i < c->client_followers.size(); i++){
+	                if (c->client_followers[i]->stream != 0 && c->client_followers[i]->connected){
+	                	std::cout << label << ": " << "Writing to: " << c->client_followers[i]->username << std::endl;
+	                    c->client_followers[i]->stream->Write(new_posting);
+	                }
+	            }
+	            std::cout << label << ": " << "Set new post data" << std::endl;
+				
             }
         });
         
         reader.join();
         if (label == "client"){
         	c->connected = false;
-        	//c->stream = 0;
+        	c->stream = 0;
         	killClient(user);
         }
-        else{
-        	hasBroadcastStream = false;
-        }
-        std::cout << label << ": " << "timeline disconnected" << std::endl;
+		else{
+			c->stream = 0;
+			broadcastStream = 0;
+		}
+        std::cout << label << ": " << user << "'s timeline disconnected" << std::endl;
 
         return Status::OK;
 	}

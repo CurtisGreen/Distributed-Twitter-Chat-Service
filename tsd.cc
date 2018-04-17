@@ -751,13 +751,15 @@ class SNSServiceImpl final : public SNSService::Service {
 	            if (outputTime[outputTime.length()-1] == '\n'){
 	                time_data = outputTime.substr(0, outputTime.length()-1);
 	            }
-	            new_posting.set_content(p.username() + "(" + time_data + ")>> " + p.content() + '\n');
-	            for(int i = 0; i < c->client_followers.size(); i++){
-	                if (c->client_followers[i]->stream != 0 && c->client_followers[i]->connected){
-	                	std::cout << label << ": " << "Writing to: " << c->client_followers[i]->username << std::endl;
-	                    c->client_followers[i]->stream->Write(new_posting);
-	                }
-	            }
+	            if (p.content() != "--connect--"){
+		            new_posting.set_content(p.username() + "(" + time_data + ")>> " + p.content() + '\n');
+		            for(int i = 0; i < c->client_followers.size(); i++){
+		                if (c->client_followers[i]->stream != 0 && c->client_followers[i]->connected){
+		                	std::cout << label << ": " << "Writing to: " << c->client_followers[i]->username << std::endl;
+		                    c->client_followers[i]->stream->Write(new_posting);
+		                }
+		            }
+		        }
 	            std::cout << label << ": " << "Set new post data" << std::endl;
 				
             }

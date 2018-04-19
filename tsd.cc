@@ -719,8 +719,10 @@ class SNSServiceImpl final : public SNSService::Service {
 
             while(stream->Read(&p)) {
             	std::cout << label << ": " << "Top of read while" << std::endl;
+            	std::cout << label << ": " << incomingIP << " :::: " <<  tailIP << std::endl;
             	std::flush(std::cout);
             	q=p;
+            	incomingIP = q.ip();
             	if (incomingIP == ""){
             		q.set_ip(myServerAddress);
             	}
@@ -744,7 +746,7 @@ class SNSServiceImpl final : public SNSService::Service {
 					}
             	}
 				// Disregard initial connection
-				if (p.content() != "--connect--"){
+				else if (p.content() != "--connect--"){
 		            readData(p);
 				}
 	            std::string time_data = outputTime;

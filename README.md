@@ -11,7 +11,7 @@ To run the router on hostname localhost and port 3010:
 
     ./tsd -t router -p 3010 -h router_host_addr
     
-To run the master & slave on hostname localhost and port 4000 with router port 3010:
+To run the master & slave with router port 3010:
 
     ./tsd -t master -q router_host_addr -r 3010 -s slave -h host_addr -p 4000
     

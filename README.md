@@ -20,7 +20,7 @@ To run the client to connect to router port 3010
     ./tsc -h host_addr -p 3010 -u user1
  
 Note to grader:
- * Reconnecting in timeline works, but it requires each client to send 1 message before normal behavior comes back
+ * Reconnecting in timeline works, but it requires the clients to send a message each before normal behavior comes back
  * Killing the router server will stop the slave servers from bringing their masters back to life
  * Data is written to data.csv, deleting the file will remove clear the current persistent data
 

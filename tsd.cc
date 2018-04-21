@@ -1169,7 +1169,7 @@ void slaveStart(std::string port, std::string hostname, std::string routerPort, 
 			std::cout << "Slave: Restarting Server...";
 
 			// Restart master
-			usleep(10000000);
+
 			std::string path = "./tsd";
 			std::string input1 = "-p " + std::to_string(std::stoi(port));
 			std::string input2 = "-h " + hostname;
@@ -1178,7 +1178,7 @@ void slaveStart(std::string port, std::string hostname, std::string routerPort, 
 			std::string input5 = "-q " + routerHost;
 			std::cout << "RUNNING COMMAND:" << path << " " << input1 << input2 << input3 << input4 << input5 << std::endl;
 			startNewProcess(path, input1, input2, input3, input4, input5);
-			usleep(10000000);
+			usleep(1000000);
 			
 			std::cout << "Restart Complete!" << std::endl;
 		}

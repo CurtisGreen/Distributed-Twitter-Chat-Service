@@ -295,14 +295,14 @@ class SNSServiceImpl final : public SNSService::Service {
 			tailIP = servIP;
 		}
 		
-		std::cout << "Add Server: " << std::endl;
+		std::cout << std::endl << "New message broadcast configuration: " << std::endl;
 		auto curr = server_db.find(headIP);
 		std::cout << curr->first << " --> ";
 		while(curr->first != tailIP){
 			curr = server_db.find(curr->second.destinationIP);
 			std::cout << curr->first << " --> ";
 		}
-		std::cout << std::endl;
+		std::cout << "head" << std::endl << std::endl;
 		//std::cout << "..." << tailServer->second.destinationIP << "| , |"<< currServer->second.sourceIP << "..." << currServer->second.destinationIP << "| , |" << headServer->second.sourceIP << "..." << std::endl;
 		//std::cout << "Head: " << headIP << std::endl;
 		//std::cout << "Tail: " << tailIP << std::endl;
@@ -434,7 +434,7 @@ class SNSServiceImpl final : public SNSService::Service {
 			broadcastStream = 0;
 			hasBroadcastStream = false;
 		}
-		std::cout << "New source: " << headIP << " dest: " << tailIP << std::endl;
+		//std::cout << "New source: " << headIP << " dest: " << tailIP << std::endl;
 
 		if (headIP == "error" || tailIP == "error"){
 			std::cout << "Failed to establish place in server network" << std::endl;
@@ -614,7 +614,7 @@ class SNSServiceImpl final : public SNSService::Service {
     ---------------------------------------------*/
 	Status Timeline(ServerContext* context, 
 		ServerReaderWriter<Posting, Posting>* stream) override {
-		std::cout << "-------new stream-------" << std::endl;
+		//std::cout << "-------new stream-------" << std::endl;
 		std::flush(std::cout);
 		Client *c;
 
@@ -643,9 +643,9 @@ class SNSServiceImpl final : public SNSService::Service {
 		}
 		else{
 			label = "broadcast";
-			std::cout << "BROAD: " << incomingIP << std::endl;
+			//std::cout << "BROAD: " << incomingIP << std::endl;
 		}
-		std::cout << label << ": " << "Creating timeline connection with tailIP: " << tailIP << std::endl;
+		std::cout << label << ": " << "Creating broadcast stream with server at IP: " << tailIP << std::endl;
 		// Setup new stream between servers
 		if(broadcastStream == 0){
 			stub_ = std::unique_ptr<SNSService::Stub>(SNSService::NewStub(
@@ -653,7 +653,7 @@ class SNSServiceImpl final : public SNSService::Service {
                 	tailIP, grpc::InsecureChannelCredentials())));
 			broadcastStream = stub_->Timeline(&broadcastContext);
 			hasBroadcastStream = true;
-			std::cout << label << ": " << "Didn't have a broadcast stream, now it does" << std::endl;
+			std::cout << label << ": " << "Created new broadcast stream" << std::endl;
 		}
 		
 		
@@ -663,7 +663,7 @@ class SNSServiceImpl final : public SNSService::Service {
 			q.set_ip(myServerAddress);
 		}*/
 
-		std::cout << label << ": " << "incoming = " << incomingIP << " myserver = " << myServerAddress << std::endl;
+		//std::cout << label << ": " << "incoming = " << incomingIP << " myserver = " << myServerAddress << std::endl;
 		/*if (incomingIP != myServerAddress){
 			broadcastStream->Write(q);
 			std::cout << "Shouldn't write here" << std::endl;
@@ -672,7 +672,7 @@ class SNSServiceImpl final : public SNSService::Service {
 		
 		// Write old posts from followees
         if (nameIndex >= 0 ){
-			std::cout << label << ": " << "Writing old posts" << std::endl;
+			std::cout << "Master: Writing old posts" << std::endl;
         	c = &client_db[nameIndex];
 		
 	        for(int i = 0; i < c->posts.size(); i++){
@@ -714,12 +714,22 @@ class SNSServiceImpl final : public SNSService::Service {
 
         // Read user input and write it to followers
         std::thread reader([&](){
-
-			std::cout << label << ": " << incomingIP << " :::: " <<  tailIP << std::endl;
+        	if(incomingIP == ""){
+        		std::cout << label << ": " << "Incoming IP: Local Client, Outgoing IP: " <<  tailIP << std::endl;
+        	}
+        	else{
+        		std::cout << label << ": " << "Incoming IP: "<< incomingIP << ", Outgoing IP: " <<  tailIP << std::endl;
+        	}
+			
 
             while(stream->Read(&p)) {
-            	std::cout << label << ": " << "Top of read while" << std::endl;
-            	std::cout << label << ": " << incomingIP << " :::: " <<  tailIP << std::endl;
+            	std::cout << "-----Post Received-----" << std::endl;
+            	if(incomingIP == ""){
+	        		std::cout << label << ": " << "Incoming IP: Local Client, Outgoing IP: " <<  tailIP << std::endl;
+	        	}
+	        	else{
+	        		std::cout << label << ": " << "Incoming IP: "<< incomingIP << ", Outgoing IP: " <<  tailIP << std::endl;
+	        	}
             	std::flush(std::cout);
             	q=p;
             	incomingIP = q.ip();
@@ -762,7 +772,7 @@ class SNSServiceImpl final : public SNSService::Service {
 		                }
 		            }
 		        }
-	            std::cout << label << ": " << "Set new post data" << std::endl;
+	            std::cout << "-----------------------" << std::endl << std::endl;
 				
             }
         });

@@ -1,6 +1,6 @@
 # Distributed_Twitter_Chat_Service
 
-
+### Setup and Run
 Compile the code using the provided makefile:
 
     make
@@ -21,7 +21,7 @@ To run the client to connect to router port 3010
 
     ./tsc -h host_addr -p 3010 -u user1
  
-Note to grader:
+### Notes:
  * Reconnecting in timeline works, but it requires the clients to send two messages each before normal behavior comes back
  * Killing the router server will stop the slave servers from bringing their masters back to life
  * Data is written to data.csv, deleting the file will remove clear the current persistent data

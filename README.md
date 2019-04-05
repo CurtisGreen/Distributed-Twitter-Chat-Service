@@ -1,4 +1,13 @@
 # Distributed_Twitter_Chat_Service
+### Description
+Follow other users to see their posts. Write posts yourself and all followers will be able to see them in real time.
+
+### Notes
+* Server remembers all users, posts, and followers even after exiting
+* Servers can be launched from different locations
+* Client usage and memory load is distributed evenly
+* Each username is assumed to be unique, launching with the same name will show that user's posts and followers
+* Made using C++ and gRPC
 
 ### Setup and Run
 Compile the code using the provided makefile:

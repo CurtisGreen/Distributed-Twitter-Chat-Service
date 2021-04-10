@@ -1,4 +1,4 @@
-# Distributed_Twitter_Chat_Service
+# Distributed-Twitter-Chat-Service
 ### Description
 Follow other users to see their posts. Write posts yourself and all followers will be able to see them in real time.
 
